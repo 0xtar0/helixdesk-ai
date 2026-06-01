@@ -7,9 +7,11 @@ HelixDesk AI is a local-first support desk for teams that want AI triage, knowle
 ## Features
 
 - Ticket queue with status, priority, category, assignee, SLA, and full conversation history.
+- Rich ticket intake with category, assignee, tags, and custom SLA target.
 - Local AI triage with sentiment, urgency, tags, summaries, next steps, and reply drafts.
 - Optional Ollama integration for richer analysis, with an offline rules-based fallback.
 - Knowledge base CRUD with search and AI article matching.
+- Customer context panel for related tickets from the same customer or company.
 - Agent composer with AI draft insertion and internal notes.
 - Resolve/reopen workflow with SLA countdowns and persistent unsent reply drafts.
 - Analytics for queue health, priority mix, category mix, and SLA risk.

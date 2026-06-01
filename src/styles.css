@@ -571,6 +571,61 @@ label {
   font-size: 13px;
 }
 
+.customer-context p {
+  margin: 10px 0;
+  color: var(--muted);
+}
+
+.context-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.context-stats span {
+  display: grid;
+  gap: 2px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.context-stats strong {
+  color: var(--ink);
+  font-size: 22px;
+}
+
+.context-list {
+  display: grid;
+  gap: 8px;
+}
+
+.context-ticket {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: #fff;
+  color: var(--ink);
+  text-align: left;
+}
+
+.context-ticket:hover {
+  border-color: rgba(14, 124, 116, 0.45);
+  background: #f7fbfa;
+}
+
+.context-ticket span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .article-grid,
 .analytics-grid,
 .settings-grid {

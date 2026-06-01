@@ -1,6 +1,6 @@
 import { analyzeTicket, testOllama } from "./lib/ai.js";
 import { findRelatedArticles, searchRecords } from "./lib/search.js";
-import { createId, downloadJson, loadData, resetData, saveData } from "./lib/storage.js";
+import { createId, downloadJson, loadData, normalizeData, resetData, saveData } from "./lib/storage.js";
 
 const app = document.querySelector("#app");
 
@@ -48,6 +48,18 @@ const saveAndRender = () => {
 const selectedTicket = () => db.tickets.find((ticket) => ticket.id === selectedTicketId) || db.tickets[0];
 
 const ticketTags = (ticket) => (Array.isArray(ticket.tags) ? ticket.tags : []);
+
+const parseTags = (value) =>
+  String(value || "")
+    .split(",")
+    .map((tag) => tag.trim())
+    .filter(Boolean);
+
+const parseDueHours = (value) => {
+  const hours = Number.parseInt(value, 10);
+  if (Number.isNaN(hours)) return 24;
+  return Math.min(Math.max(hours, 1), 720);
+};
 
 const ticketMatches = (ticket) => {
   const query = filters.query.toLowerCase();
@@ -268,7 +280,41 @@ const renderTicketDetail = (ticket) => {
           </div>
           ${articles.map(renderArticleMini).join("") || `<p class="muted">No related articles yet.</p>`}
         </div>
+        ${renderCustomerContext(ticket)}
       </aside>
+    </div>
+  `;
+};
+
+const renderCustomerContext = (ticket) => {
+  const related = db.tickets
+    .filter((item) => item.id !== ticket.id)
+    .filter((item) => item.email === ticket.email || item.company === ticket.company)
+    .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+    .slice(0, 4);
+  const companyTickets = db.tickets.filter((item) => item.company === ticket.company);
+  const openCompanyTickets = companyTickets.filter((item) => item.status !== "Resolved");
+
+  return `
+    <div class="insight-card customer-context">
+      <h3>Customer context</h3>
+      <div class="context-stats">
+        <span><strong>${companyTickets.length}</strong>Total tickets</span>
+        <span><strong>${openCompanyTickets.length}</strong>Open at company</span>
+      </div>
+      <p>${escapeHtml(ticket.company)} · ${escapeHtml(ticket.email || "No email")}</p>
+      <div class="context-list">
+        ${related
+          .map(
+            (item) => `
+              <button class="context-ticket" data-ticket-id="${item.id}">
+                <strong>${escapeHtml(item.subject)}</strong>
+                <span>${escapeHtml(item.status)} · ${escapeHtml(item.priority)} · ${formatDate(item.updatedAt)}</span>
+              </button>
+            `
+          )
+          .join("") || `<p class="muted">No related tickets for this customer yet.</p>`}
+      </div>
     </div>
   `;
 };
@@ -495,6 +541,10 @@ const renderModal = () => {
           <div class="field-grid">
             <label><span>Channel</span>${formSelect("channel", ["Email", "Chat", "Portal"])}</label>
             <label><span>Priority</span>${formSelect("priority", ["Normal", "High", "Urgent", "Low"])}</label>
+            <label><span>Category</span><input name="category" value="General" /></label>
+            <label><span>Assignee</span><input name="assignee" value="${escapeHtml(db.settings.defaultAssignee)}" /></label>
+            <label><span>SLA hours</span><input name="dueHours" type="number" min="1" max="720" value="24" /></label>
+            <label><span>Tags</span><input name="tags" placeholder="sso, billing" /></label>
           </div>
           <button class="primary" type="submit">Create ticket</button>
         </form>
@@ -620,7 +670,7 @@ const createTicket = async (event) => {
   const form = new FormData(event.currentTarget);
   const now = new Date().toISOString();
   const due = new Date();
-  due.setHours(due.getHours() + 24);
+  due.setHours(due.getHours() + parseDueHours(form.get("dueHours")));
   const ticket = {
     id: createId("TCK"),
     customer: form.get("customer"),
@@ -631,9 +681,9 @@ const createTicket = async (event) => {
     channel: form.get("channel"),
     status: "Open",
     priority: form.get("priority"),
-    category: "General",
-    assignee: db.settings.defaultAssignee,
-    tags: [],
+    category: form.get("category") || "General",
+    assignee: form.get("assignee") || db.settings.defaultAssignee,
+    tags: parseTags(form.get("tags")),
     createdAt: now,
     updatedAt: now,
     dueAt: due.toISOString(),
@@ -795,7 +845,7 @@ const importData = async (event) => {
     if (!Array.isArray(next.tickets) || !Array.isArray(next.articles) || !next.settings) {
       throw new Error("Invalid HelixDesk export.");
     }
-    db = next;
+    db = normalizeData(next);
     selectedTicketId = db.tickets[0]?.id || null;
     saveAndRender();
     setNotice("Workspace imported.");
