@@ -10,7 +10,9 @@ let selectedTicketId = db.tickets[0]?.id || null;
 let filters = { status: "All", priority: "All", query: "" };
 let modal = null;
 let notice = "";
+let noticeTimer = null;
 let busy = "";
+const drafts = {};
 
 const escapeHtml = (value = "") =>
   String(value)
@@ -28,6 +30,16 @@ const formatDate = (value) =>
     minute: "2-digit"
   }).format(new Date(value));
 
+const hoursUntil = (value) => (new Date(value) - new Date()) / 36e5;
+
+const formatSla = (ticket) => {
+  if (ticket.status === "Resolved") return "Resolved";
+  const hours = hoursUntil(ticket.dueAt);
+  if (hours < 0) return `${Math.ceil(Math.abs(hours))}h overdue`;
+  if (hours < 24) return `${Math.max(1, Math.ceil(hours))}h left`;
+  return `${Math.ceil(hours / 24)}d left`;
+};
+
 const saveAndRender = () => {
   saveData(db);
   render();
@@ -35,9 +47,11 @@ const saveAndRender = () => {
 
 const selectedTicket = () => db.tickets.find((ticket) => ticket.id === selectedTicketId) || db.tickets[0];
 
+const ticketTags = (ticket) => (Array.isArray(ticket.tags) ? ticket.tags : []);
+
 const ticketMatches = (ticket) => {
   const query = filters.query.toLowerCase();
-  const haystack = `${ticket.id} ${ticket.subject} ${ticket.customer} ${ticket.company} ${ticket.body} ${ticket.tags.join(" ")}`.toLowerCase();
+  const haystack = `${ticket.id} ${ticket.subject} ${ticket.customer} ${ticket.company} ${ticket.body} ${ticketTags(ticket).join(" ")}`.toLowerCase();
   return (
     (filters.status === "All" || ticket.status === filters.status) &&
     (filters.priority === "All" || ticket.priority === filters.priority) &&
@@ -53,7 +67,7 @@ const getTickets = () =>
 const metricValue = (predicate) => db.tickets.filter(predicate).length;
 
 const slaState = (ticket) => {
-  const hours = (new Date(ticket.dueAt) - new Date()) / 36e5;
+  const hours = hoursUntil(ticket.dueAt);
   if (ticket.status === "Resolved") return "ok";
   if (hours < 0) return "breached";
   if (hours < 6) return "risk";
@@ -62,7 +76,9 @@ const slaState = (ticket) => {
 
 const setNotice = (message) => {
   notice = message;
-  window.setTimeout(() => {
+  window.clearTimeout(noticeTimer);
+  render();
+  noticeTimer = window.setTimeout(() => {
     if (notice === message) {
       notice = "";
       render();
@@ -141,8 +157,9 @@ const renderView = () => {
 
 const renderDesk = () => {
   const tickets = getTickets();
-  const current = selectedTicket() || tickets[0];
-  if (current && !selectedTicketId) selectedTicketId = current.id;
+  const selectedVisibleTicket = tickets.find((ticket) => ticket.id === selectedTicketId);
+  const current = selectedVisibleTicket || tickets[0] || null;
+  selectedTicketId = current?.id || null;
 
   return `
     <section class="metrics-grid">
@@ -210,7 +227,15 @@ const renderTicketDetail = (ticket) => {
         <h2>${escapeHtml(ticket.subject)}</h2>
         <p>${escapeHtml(ticket.customer)} · <a href="mailto:${escapeHtml(ticket.email)}">${escapeHtml(ticket.email)}</a></p>
       </div>
-      <button class="primary" data-action="analyze-ticket" data-id="${ticket.id}">Analyze</button>
+      <div class="header-actions">
+        <button class="secondary" data-action="toggle-resolved" data-id="${ticket.id}">${ticket.status === "Resolved" ? "Reopen" : "Resolve"}</button>
+        <button class="primary" data-action="analyze-ticket" data-id="${ticket.id}">Analyze</button>
+      </div>
+    </div>
+    <div class="ticket-summary-strip">
+      <span><strong>SLA</strong>${escapeHtml(formatSla(ticket))}</span>
+      <span><strong>Updated</strong>${formatDate(ticket.updatedAt)}</span>
+      <span><strong>Tags</strong>${ticketTags(ticket).length ? ticketTags(ticket).map(escapeHtml).join(", ") : "None"}</span>
     </div>
     <div class="field-grid">
       ${fieldSelect(ticket, "status", ["Open", "Waiting", "Resolved"])}
@@ -226,7 +251,7 @@ const renderTicketDetail = (ticket) => {
         </div>
         <label class="composer">
           <span>Reply</span>
-          <textarea id="reply-box" placeholder="Write a customer reply"></textarea>
+          <textarea id="reply-box" data-id="${ticket.id}" placeholder="Write a customer reply">${escapeHtml(drafts[ticket.id] || "")}</textarea>
         </label>
         <div class="button-row">
           <button class="secondary" data-action="insert-draft" data-id="${ticket.id}" ${ticket.ai?.suggestedReply ? "" : "disabled"}>Insert AI draft</button>
@@ -519,8 +544,7 @@ const bindEvents = () => {
   });
 
   document.querySelector("#filter-query")?.addEventListener("input", (event) => {
-    filters.query = event.target.value;
-    render();
+    updateFilterQuery(event);
   });
 
   document.querySelector("#filter-status")?.addEventListener("change", (event) => {
@@ -537,6 +561,10 @@ const bindEvents = () => {
     field.addEventListener("change", updateTicketField);
   });
 
+  document.querySelector("#reply-box")?.addEventListener("input", (event) => {
+    drafts[event.target.dataset.id] = event.target.value;
+  });
+
   document.querySelectorAll("[data-action]").forEach((button) => {
     button.addEventListener("click", handleAction);
   });
@@ -545,6 +573,17 @@ const bindEvents = () => {
   document.querySelector("#article-form")?.addEventListener("submit", saveArticle);
   document.querySelector("#settings-form")?.addEventListener("submit", saveSettings);
   document.querySelector("#import-file")?.addEventListener("change", importData);
+};
+
+const updateFilterQuery = (event) => {
+  const cursor = event.target.selectionStart;
+  filters.query = event.target.value;
+  render();
+  const input = document.querySelector("#filter-query");
+  if (input) {
+    input.focus();
+    input.setSelectionRange(cursor, cursor);
+  }
 };
 
 const handleAction = async (event) => {
@@ -559,6 +598,7 @@ const handleAction = async (event) => {
   if (action === "insert-draft") insertDraft(id);
   if (action === "send-reply") sendReply(id, "agent");
   if (action === "save-note") sendReply(id, "internal");
+  if (action === "toggle-resolved") toggleResolved(id);
   if (action === "export-data") downloadJson(db, `helixdesk-export-${new Date().toISOString().slice(0, 10)}.json`);
   if (action === "import-data") document.querySelector("#import-file").click();
   if (action === "reset-data") {
@@ -665,7 +705,11 @@ const updateTicketField = (event) => {
 const insertDraft = (id) => {
   const ticket = db.tickets.find((item) => item.id === id);
   const box = document.querySelector("#reply-box");
-  if (ticket?.ai?.suggestedReply && box) box.value = ticket.ai.suggestedReply;
+  if (ticket?.ai?.suggestedReply && box) {
+    drafts[id] = ticket.ai.suggestedReply;
+    box.value = ticket.ai.suggestedReply;
+    setNotice("AI draft inserted.");
+  }
 };
 
 const sendReply = (id, type) => {
@@ -684,8 +728,18 @@ const sendReply = (id, type) => {
   });
   ticket.status = type === "internal" ? ticket.status : "Waiting";
   ticket.updatedAt = new Date().toISOString();
+  drafts[id] = "";
   saveAndRender();
   setNotice(type === "internal" ? "Internal note saved." : "Reply added to the conversation.");
+};
+
+const toggleResolved = (id) => {
+  const ticket = db.tickets.find((item) => item.id === id);
+  if (!ticket) return;
+  ticket.status = ticket.status === "Resolved" ? "Open" : "Resolved";
+  ticket.updatedAt = new Date().toISOString();
+  saveAndRender();
+  setNotice(ticket.status === "Resolved" ? "Ticket resolved." : "Ticket reopened.");
 };
 
 const runAnalysis = async (id, shouldRender = true) => {

@@ -11,6 +11,7 @@ HelixDesk AI is a local-first support desk for teams that want AI triage, knowle
 - Optional Ollama integration for richer analysis, with an offline rules-based fallback.
 - Knowledge base CRUD with search and AI article matching.
 - Agent composer with AI draft insertion and internal notes.
+- Resolve/reopen workflow with SLA countdowns and persistent unsent reply drafts.
 - Analytics for queue health, priority mix, category mix, and SLA risk.
 - JSON import/export for local backups and migration.
 - No required build step, backend, account, or cloud API.
@@ -58,7 +59,10 @@ This project is intentionally framework-free for the first public build. The cor
 
 ```bash
 npm test
+npm run build
 ```
+
+`npm run build` validates the static app contract. There is no bundled artifact yet because the app ships as plain ES modules.
 
 ## Roadmap
 

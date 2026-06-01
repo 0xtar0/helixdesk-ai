@@ -20,6 +20,10 @@ if (!analysis.suggestedReply || !analysis.summary || !analysis.relatedArticleIds
   throw new Error("Fallback AI analysis did not produce the expected support artifacts.");
 }
 
+if (analysis.priority !== "Urgent" || analysis.category !== "Authentication") {
+  throw new Error("Fallback AI triage did not classify the seeded SSO ticket correctly.");
+}
+
 const related = findRelatedArticles(seed.tickets[2], seed.articles);
 if (!related.some((article) => article.title.includes("CSV"))) {
   throw new Error("Knowledge search did not find the expected CSV article.");

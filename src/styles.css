@@ -187,7 +187,8 @@ a {
 
 .topbar-actions,
 .pill-row,
-.article-footer > div {
+.article-footer > div,
+.header-actions {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -415,6 +416,33 @@ textarea {
 .ticket-header p {
   margin: 5px 0 0;
   color: var(--muted);
+}
+
+.ticket-summary-strip {
+  display: grid;
+  grid-template-columns: 140px 180px minmax(0, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.ticket-summary-strip span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--surface-soft);
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ticket-summary-strip strong {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
 }
 
 .field-grid {
@@ -723,6 +751,10 @@ label {
   .watch-row {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .ticket-summary-strip {
+    grid-template-columns: 1fr;
   }
 
   .topbar h1 {
