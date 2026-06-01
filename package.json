@@ -1,0 +1,21 @@
+{
+  "name": "helixdesk-ai",
+  "version": "0.1.0",
+  "description": "A local-first AI support desk for triage, knowledge retrieval, and agent reply drafting.",
+  "type": "module",
+  "private": false,
+  "license": "MIT",
+  "scripts": {
+    "dev": "python3 -m http.server 4173",
+    "start": "python3 -m http.server 4173",
+    "test": "node scripts/smoke-test.mjs"
+  },
+  "keywords": [
+    "support-desk",
+    "local-ai",
+    "ollama",
+    "helpdesk",
+    "knowledge-base",
+    "open-source"
+  ]
+}
