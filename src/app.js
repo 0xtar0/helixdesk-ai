@@ -1,6 +1,6 @@
 import { analyzeTicket, testOllama } from "./lib/ai.js";
 import { findRelatedArticles, searchRecords } from "./lib/search.js";
-import { createId, downloadJson, loadData, normalizeData, resetData, saveData } from "./lib/storage.js";
+import { clearDrafts, createId, downloadJson, loadData, loadDrafts, normalizeData, resetData, saveData, saveDrafts } from "./lib/storage.js";
 
 const app = document.querySelector("#app");
 
@@ -12,7 +12,7 @@ let modal = null;
 let notice = "";
 let noticeTimer = null;
 let busy = "";
-const drafts = {};
+const drafts = loadDrafts();
 
 const escapeHtml = (value = "") =>
   String(value)
@@ -267,6 +267,8 @@ const renderTicketDetail = (ticket) => {
         </label>
         <div class="button-row">
           <button class="secondary" data-action="insert-draft" data-id="${ticket.id}" ${ticket.ai?.suggestedReply ? "" : "disabled"}>Insert AI draft</button>
+          <button class="secondary" data-action="insert-ack" data-id="${ticket.id}">Ack macro</button>
+          <button class="secondary" data-action="insert-details" data-id="${ticket.id}">Details macro</button>
           <button class="secondary" data-action="save-note" data-id="${ticket.id}">Save note</button>
           <button class="primary" data-action="send-reply" data-id="${ticket.id}">Send reply</button>
         </div>
@@ -613,6 +615,7 @@ const bindEvents = () => {
 
   document.querySelector("#reply-box")?.addEventListener("input", (event) => {
     drafts[event.target.dataset.id] = event.target.value;
+    saveDrafts(drafts);
   });
 
   document.querySelectorAll("[data-action]").forEach((button) => {
@@ -646,6 +649,8 @@ const handleAction = async (event) => {
   if (action === "edit-article") modal = { type: "article", article: db.articles.find((article) => article.id === id) };
   if (action === "delete-article") deleteArticle(id);
   if (action === "insert-draft") insertDraft(id);
+  if (action === "insert-ack") insertMacro(id, "ack");
+  if (action === "insert-details") insertMacro(id, "details");
   if (action === "send-reply") sendReply(id, "agent");
   if (action === "save-note") sendReply(id, "internal");
   if (action === "toggle-resolved") toggleResolved(id);
@@ -655,6 +660,7 @@ const handleAction = async (event) => {
     if (confirm("Reset HelixDesk AI to the seeded demo workspace?")) {
       db = resetData();
       selectedTicketId = db.tickets[0]?.id || null;
+      for (const key of Object.keys(drafts)) delete drafts[key];
       setNotice("Demo data restored.");
     }
   }
@@ -754,12 +760,29 @@ const updateTicketField = (event) => {
 
 const insertDraft = (id) => {
   const ticket = db.tickets.find((item) => item.id === id);
-  const box = document.querySelector("#reply-box");
-  if (ticket?.ai?.suggestedReply && box) {
-    drafts[id] = ticket.ai.suggestedReply;
-    box.value = ticket.ai.suggestedReply;
+  if (ticket?.ai?.suggestedReply) {
+    updateDraft(id, ticket.ai.suggestedReply, "replace");
     setNotice("AI draft inserted.");
   }
+};
+
+const insertMacro = (id, type) => {
+  const ticket = db.tickets.find((item) => item.id === id);
+  if (!ticket) return;
+  const templates = {
+    ack: `Hi ${ticket.customer.split(" ")[0] || "there"},\n\nThanks for flagging this. I am checking the workspace details now and will keep this ticket updated until we have a confirmed path forward.`,
+    details: "Could you send the exact timestamp, workspace, and the steps you took right before this happened? A screenshot or request ID would help me reproduce it faster."
+  };
+  updateDraft(id, templates[type], "append");
+  setNotice("Macro inserted.");
+};
+
+const updateDraft = (id, text, mode = "append") => {
+  const current = drafts[id] || "";
+  drafts[id] = mode === "replace" ? text : [current.trim(), text].filter(Boolean).join("\n\n");
+  saveDrafts(drafts);
+  const box = document.querySelector("#reply-box");
+  if (box?.dataset.id === id) box.value = drafts[id];
 };
 
 const sendReply = (id, type) => {
@@ -778,7 +801,8 @@ const sendReply = (id, type) => {
   });
   ticket.status = type === "internal" ? ticket.status : "Waiting";
   ticket.updatedAt = new Date().toISOString();
-  drafts[id] = "";
+  delete drafts[id];
+  saveDrafts(drafts);
   saveAndRender();
   setNotice(type === "internal" ? "Internal note saved." : "Reply added to the conversation.");
 };
@@ -842,11 +866,13 @@ const importData = async (event) => {
   if (!file) return;
   try {
     const next = JSON.parse(await file.text());
-    if (!Array.isArray(next.tickets) || !Array.isArray(next.articles) || !next.settings) {
+    if (!next || !Array.isArray(next.tickets) || !Array.isArray(next.articles)) {
       throw new Error("Invalid HelixDesk export.");
     }
     db = normalizeData(next);
     selectedTicketId = db.tickets[0]?.id || null;
+    clearDrafts();
+    for (const key of Object.keys(drafts)) delete drafts[key];
     saveAndRender();
     setNotice("Workspace imported.");
   } catch (error) {

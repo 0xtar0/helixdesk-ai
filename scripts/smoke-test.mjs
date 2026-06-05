@@ -32,8 +32,7 @@ if (!related.some((article) => article.title.includes("CSV"))) {
 
 const imported = normalizeData({
   tickets: [{ subject: "Imported ticket", body: "Needs help" }],
-  articles: [{ title: "Imported article" }],
-  settings: {}
+  articles: [{ title: "Imported article" }]
 });
 
 if (!imported.tickets[0].tags || !imported.tickets[0].messages.length || !imported.settings.defaultAssignee) {

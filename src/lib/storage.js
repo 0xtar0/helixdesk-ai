@@ -1,6 +1,7 @@
 import { createSeedData } from "./sample-data.js";
 
 export const STORAGE_KEY = "helixdesk:v1";
+export const DRAFTS_KEY = "helixdesk:drafts:v1";
 
 export const createId = (prefix) => {
   const value = Math.random().toString(36).slice(2, 7).toUpperCase();
@@ -30,9 +31,28 @@ export const saveData = (data) => {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 };
 
+export const loadDrafts = () => {
+  try {
+    return JSON.parse(localStorage.getItem(DRAFTS_KEY) || "{}");
+  } catch (error) {
+    console.warn("Unable to load HelixDesk drafts; clearing draft storage.", error);
+    localStorage.removeItem(DRAFTS_KEY);
+    return {};
+  }
+};
+
+export const saveDrafts = (drafts) => {
+  localStorage.setItem(DRAFTS_KEY, JSON.stringify(drafts));
+};
+
+export const clearDrafts = () => {
+  localStorage.removeItem(DRAFTS_KEY);
+};
+
 export const resetData = () => {
   const seeded = createSeedData();
   saveData(seeded);
+  clearDrafts();
   return seeded;
 };
 

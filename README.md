@@ -12,8 +12,8 @@ HelixDesk AI is a local-first support desk for teams that want AI triage, knowle
 - Optional Ollama integration for richer analysis, with an offline rules-based fallback.
 - Knowledge base CRUD with search and AI article matching.
 - Customer context panel for related tickets from the same customer or company.
-- Agent composer with AI draft insertion and internal notes.
-- Resolve/reopen workflow with SLA countdowns and persistent unsent reply drafts.
+- Agent composer with AI draft insertion, reply macros, internal notes, and reload-safe unsent drafts.
+- Resolve/reopen workflow with SLA countdowns.
 - Analytics for queue health, priority mix, category mix, and SLA risk.
 - JSON import/export for local backups and migration.
 - No required build step, backend, account, or cloud API.
