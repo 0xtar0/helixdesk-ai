@@ -41,7 +41,8 @@ const imported = normalizeData({
       messages: [{ type: "mystery", createdAt: "not-a-date" }]
     }
   ],
-  articles: [{ title: "Imported article", updatedAt: "not-a-date" }]
+  articles: [{ title: "Imported article", updatedAt: "not-a-date" }],
+  settings: { defaultSlaHours: "9999" }
 });
 
 if (!imported.tickets[0].tags || !imported.tickets[0].messages.length || !imported.settings.defaultAssignee) {
@@ -54,6 +55,10 @@ if (imported.tickets[0].status !== "Open" || imported.tickets[0].priority !== "N
 
 if (imported.tickets[0].messages[0].type !== "customer" || Number.isNaN(new Date(imported.tickets[0].messages[0].createdAt).getTime())) {
   throw new Error("Import normalization did not correct invalid message history.");
+}
+
+if (imported.settings.defaultSlaHours !== 720) {
+  throw new Error("Import normalization did not clamp default SLA hours.");
 }
 
 console.log("HelixDesk AI smoke test passed.");

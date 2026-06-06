@@ -4,11 +4,13 @@ import { clearDrafts, createId, downloadJson, loadData, loadDrafts, normalizeDat
 
 const app = document.querySelector("#app");
 const STATUS_OPTIONS = ["Open", "Waiting", "Escalated", "Resolved"];
+const SORT_OPTIONS = ["SLA", "Updated", "Priority"];
+const PRIORITY_WEIGHT = { Urgent: 0, High: 1, Normal: 2, Low: 3 };
 
 let db = loadData();
 let view = "desk";
 let selectedTicketId = db.tickets[0]?.id || null;
-let filters = { status: "All", priority: "All", query: "" };
+let filters = { status: "All", priority: "All", sort: "SLA", query: "" };
 let modal = null;
 let notice = "";
 let noticeTimer = null;
@@ -71,9 +73,9 @@ const parseTags = (value) =>
     .map((tag) => tag.trim())
     .filter(Boolean);
 
-const parseDueHours = (value) => {
+const parseDueHours = (value, fallback = 24) => {
   const hours = Number.parseInt(value, 10);
-  if (Number.isNaN(hours)) return 24;
+  if (Number.isNaN(hours)) return fallback;
   return Math.min(Math.max(hours, 1), 720);
 };
 
@@ -92,7 +94,15 @@ const ticketMatches = (ticket) => {
 const getTickets = () =>
   db.tickets
     .filter(ticketMatches)
-    .sort((a, b) => dateValue(a.dueAt) - dateValue(b.dueAt) || dateValue(b.updatedAt) - dateValue(a.updatedAt));
+    .sort(sortTickets);
+
+const sortTickets = (a, b) => {
+  if (filters.sort === "Updated") return dateValue(b.updatedAt) - dateValue(a.updatedAt);
+  if (filters.sort === "Priority") {
+    return (PRIORITY_WEIGHT[a.priority] ?? 99) - (PRIORITY_WEIGHT[b.priority] ?? 99) || dateValue(a.dueAt) - dateValue(b.dueAt);
+  }
+  return dateValue(a.dueAt) - dateValue(b.dueAt) || dateValue(b.updatedAt) - dateValue(a.updatedAt);
+};
 
 const metricValue = (predicate) => db.tickets.filter(predicate).length;
 
@@ -211,6 +221,7 @@ const renderDesk = () => {
           <input id="filter-query" value="${escapeHtml(filters.query)}" placeholder="Search tickets" />
           ${select("filter-status", ["All", ...STATUS_OPTIONS], filters.status)}
           ${select("filter-priority", ["All", "Urgent", "High", "Normal", "Low"], filters.priority)}
+          ${select("filter-sort", SORT_OPTIONS, filters.sort)}
         </div>
         <div class="ticket-list">
           ${tickets.map(renderTicketRow).join("") || `<div class="empty">No tickets match this filter.</div>`}
@@ -524,6 +535,7 @@ const renderSettings = () => `
       <h2>Workspace</h2>
       <label><span>Workspace name</span><input name="workspaceName" value="${escapeHtml(db.settings.workspaceName)}" /></label>
       <label><span>Default assignee</span><input name="defaultAssignee" value="${escapeHtml(db.settings.defaultAssignee)}" /></label>
+      <label><span>Default SLA hours</span><input name="defaultSlaHours" type="number" min="1" max="720" value="${escapeHtml(db.settings.defaultSlaHours || 24)}" /></label>
       <label><span>Reply tone</span><input name="tone" value="${escapeHtml(db.settings.tone)}" /></label>
       <h2>AI provider</h2>
       <label>
@@ -568,7 +580,7 @@ const renderModal = () => {
             <label><span>Priority</span>${formSelect("priority", ["Normal", "High", "Urgent", "Low"])}</label>
             <label><span>Category</span><input name="category" value="General" /></label>
             <label><span>Assignee</span><input name="assignee" value="${escapeHtml(db.settings.defaultAssignee)}" /></label>
-            <label><span>SLA hours</span><input name="dueHours" type="number" min="1" max="720" value="24" /></label>
+            <label><span>SLA hours</span><input name="dueHours" type="number" min="1" max="720" value="${escapeHtml(db.settings.defaultSlaHours || 24)}" /></label>
             <label><span>Tags</span><input name="tags" placeholder="sso, billing" /></label>
           </div>
           <button class="primary" type="submit">Create ticket</button>
@@ -629,6 +641,11 @@ const bindEvents = () => {
 
   document.querySelector("#filter-priority")?.addEventListener("change", (event) => {
     filters.priority = event.target.value;
+    render();
+  });
+
+  document.querySelector("#filter-sort")?.addEventListener("change", (event) => {
+    filters.sort = event.target.value;
     render();
   });
 
@@ -702,7 +719,7 @@ const createTicket = async (event) => {
   const form = new FormData(event.currentTarget);
   const now = new Date().toISOString();
   const due = new Date();
-  due.setHours(due.getHours() + parseDueHours(form.get("dueHours")));
+  due.setHours(due.getHours() + parseDueHours(form.get("dueHours"), db.settings.defaultSlaHours || 24));
   const ticket = {
     id: createId("TCK"),
     customer: cleanFormString(form.get("customer"), "Unknown customer"),
@@ -767,6 +784,7 @@ const saveSettings = (event) => {
     ...db.settings,
     workspaceName: form.get("workspaceName"),
     defaultAssignee: form.get("defaultAssignee"),
+    defaultSlaHours: parseDueHours(form.get("defaultSlaHours"), db.settings.defaultSlaHours || 24),
     tone: form.get("tone"),
     aiProvider: form.get("aiProvider"),
     ollamaEndpoint: form.get("ollamaEndpoint"),

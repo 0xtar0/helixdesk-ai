@@ -15,6 +15,8 @@ HelixDesk AI is a local-first support desk for teams that want AI triage, knowle
 - Agent composer with AI draft insertion, reply macros, internal notes, and reload-safe unsent drafts.
 - Escalate, snooze, resolve, and reopen workflow with SLA countdowns.
 - One-click ticket ownership for the configured default assignee.
+- Queue sorting by SLA, recent update, or priority.
+- Configurable default SLA hours for new tickets.
 - Analytics for queue health, priority mix, category mix, and SLA risk.
 - JSON import/export for local backups and migration.
 - No required build step, backend, account, or cloud API.

@@ -99,9 +99,16 @@ export const normalizeData = (data) => {
     })),
     settings: {
       ...seed.settings,
-      ...(data?.settings || {})
+      ...(data?.settings || {}),
+      defaultSlaHours: normalizeSlaHours(data?.settings?.defaultSlaHours, seed.settings.defaultSlaHours)
     }
   };
+};
+
+const normalizeSlaHours = (value, fallback) => {
+  const hours = Number.parseInt(value, 10);
+  if (Number.isNaN(hours)) return fallback;
+  return Math.min(Math.max(hours, 1), 720);
 };
 
 const isValidDate = (value) => {

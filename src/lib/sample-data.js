@@ -173,6 +173,7 @@ export const createSeedData = () => ({
   settings: {
     workspaceName: "Helix Support",
     defaultAssignee: "Avery",
+    defaultSlaHours: 24,
     tone: "clear, calm, and concise",
     aiProvider: "fallback",
     ollamaEndpoint: "http://localhost:11434",

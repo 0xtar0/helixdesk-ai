@@ -111,6 +111,19 @@ const parseJsonObject = (text) => {
   return JSON.parse(text.slice(start, end + 1));
 };
 
+const fetchWithTimeout = async (url, options = {}, timeoutMs = 15000) => {
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (error.name === "AbortError") throw new Error(`Request timed out after ${Math.round(timeoutMs / 1000)}s`);
+    throw error;
+  } finally {
+    globalThis.clearTimeout(timeout);
+  }
+};
+
 export const analyzeTicket = async (ticket, articles, settings) => {
   const relatedArticles = findRelatedArticles(ticket, articles, 4);
   if (settings.aiProvider !== "ollama") {
@@ -118,7 +131,7 @@ export const analyzeTicket = async (ticket, articles, settings) => {
   }
 
   try {
-    const response = await fetch(`${settings.ollamaEndpoint.replace(/\/$/, "")}/api/generate`, {
+    const response = await fetchWithTimeout(`${settings.ollamaEndpoint.replace(/\/$/, "")}/api/generate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -127,7 +140,7 @@ export const analyzeTicket = async (ticket, articles, settings) => {
         stream: false,
         format: "json"
       })
-    });
+    }, 20000);
 
     if (!response.ok) throw new Error(`Ollama returned ${response.status}`);
     const payload = await response.json();
@@ -148,7 +161,7 @@ export const analyzeTicket = async (ticket, articles, settings) => {
 };
 
 export const testOllama = async (settings) => {
-  const response = await fetch(`${settings.ollamaEndpoint.replace(/\/$/, "")}/api/tags`);
+  const response = await fetchWithTimeout(`${settings.ollamaEndpoint.replace(/\/$/, "")}/api/tags`, {}, 5000);
   if (!response.ok) throw new Error(`Ollama returned ${response.status}`);
   const payload = await response.json();
   return payload.models || [];
