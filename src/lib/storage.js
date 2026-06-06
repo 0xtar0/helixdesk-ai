@@ -2,6 +2,8 @@ import { createSeedData } from "./sample-data.js";
 
 export const STORAGE_KEY = "helixdesk:v1";
 export const DRAFTS_KEY = "helixdesk:drafts:v1";
+const VALID_STATUSES = new Set(["Open", "Waiting", "Escalated", "Resolved"]);
+const VALID_PRIORITIES = new Set(["Urgent", "High", "Normal", "Low"]);
 
 export const createId = (prefix) => {
   const value = Math.random().toString(36).slice(2, 7).toUpperCase();
@@ -64,8 +66,9 @@ export const normalizeData = (data) => {
   return {
     version: 1,
     tickets: tickets.map((ticket, index) => {
-      const createdAt = ticket.createdAt || new Date().toISOString();
-      const dueAt = ticket.dueAt || new Date(Date.now() + 24 * 36e5).toISOString();
+      const now = new Date().toISOString();
+      const createdAt = isValidDate(ticket.createdAt) ? ticket.createdAt : now;
+      const dueAt = isValidDate(ticket.dueAt) ? ticket.dueAt : new Date(Date.now() + 24 * 36e5).toISOString();
       return {
         id: ticket.id || createId("TCK"),
         customer: ticket.customer || "Unknown customer",
@@ -74,13 +77,13 @@ export const normalizeData = (data) => {
         subject: ticket.subject || `Imported ticket ${index + 1}`,
         body: ticket.body || "",
         channel: ticket.channel || "Email",
-        status: ticket.status || "Open",
-        priority: ticket.priority || "Normal",
+        status: VALID_STATUSES.has(ticket.status) ? ticket.status : "Open",
+        priority: VALID_PRIORITIES.has(ticket.priority) ? ticket.priority : "Normal",
         category: ticket.category || "General",
         assignee: ticket.assignee || data?.settings?.defaultAssignee || seed.settings.defaultAssignee,
         tags: Array.isArray(ticket.tags) ? ticket.tags : [],
         createdAt,
-        updatedAt: ticket.updatedAt || createdAt,
+        updatedAt: isValidDate(ticket.updatedAt) ? ticket.updatedAt : createdAt,
         dueAt,
         messages: Array.isArray(ticket.messages) && ticket.messages.length
           ? ticket.messages
@@ -93,7 +96,7 @@ export const normalizeData = (data) => {
       title: article.title || `Imported article ${index + 1}`,
       collection: article.collection || "General",
       tags: Array.isArray(article.tags) ? article.tags : [],
-      updatedAt: article.updatedAt || new Date().toISOString(),
+      updatedAt: isValidDate(article.updatedAt) ? article.updatedAt : new Date().toISOString(),
       content: article.content || ""
     })),
     settings: {
@@ -101,6 +104,11 @@ export const normalizeData = (data) => {
       ...(data?.settings || {})
     }
   };
+};
+
+const isValidDate = (value) => {
+  if (!value) return false;
+  return !Number.isNaN(new Date(value).getTime());
 };
 
 export const downloadJson = (data, filename) => {

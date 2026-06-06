@@ -3,6 +3,7 @@ import { findRelatedArticles, searchRecords } from "./lib/search.js";
 import { clearDrafts, createId, downloadJson, loadData, loadDrafts, normalizeData, resetData, saveData, saveDrafts } from "./lib/storage.js";
 
 const app = document.querySelector("#app");
+const STATUS_OPTIONS = ["Open", "Waiting", "Escalated", "Resolved"];
 
 let db = loadData();
 let view = "desk";
@@ -22,19 +23,34 @@ const escapeHtml = (value = "") =>
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 
-const formatDate = (value) =>
-  new Intl.DateTimeFormat(undefined, {
+const toDate = (value) => {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const dateValue = (value) => toDate(value)?.getTime() || Number.MAX_SAFE_INTEGER;
+
+const formatDate = (value) => {
+  const date = toDate(value);
+  if (!date) return "Unknown";
+  return new Intl.DateTimeFormat(undefined, {
     month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit"
-  }).format(new Date(value));
+  }).format(date);
+};
 
-const hoursUntil = (value) => (new Date(value) - new Date()) / 36e5;
+const hoursUntil = (value) => {
+  const date = toDate(value);
+  if (!date) return Number.POSITIVE_INFINITY;
+  return (date - new Date()) / 36e5;
+};
 
 const formatSla = (ticket) => {
   if (ticket.status === "Resolved") return "Resolved";
   const hours = hoursUntil(ticket.dueAt);
+  if (!Number.isFinite(hours)) return "No SLA";
   if (hours < 0) return `${Math.ceil(Math.abs(hours))}h overdue`;
   if (hours < 24) return `${Math.max(1, Math.ceil(hours))}h left`;
   return `${Math.ceil(hours / 24)}d left`;
@@ -74,7 +90,7 @@ const ticketMatches = (ticket) => {
 const getTickets = () =>
   db.tickets
     .filter(ticketMatches)
-    .sort((a, b) => new Date(a.dueAt) - new Date(b.dueAt) || new Date(b.updatedAt) - new Date(a.updatedAt));
+    .sort((a, b) => dateValue(a.dueAt) - dateValue(b.dueAt) || dateValue(b.updatedAt) - dateValue(a.updatedAt));
 
 const metricValue = (predicate) => db.tickets.filter(predicate).length;
 
@@ -175,10 +191,10 @@ const renderDesk = () => {
 
   return `
     <section class="metrics-grid">
-      ${metric("Open", metricValue((ticket) => ticket.status === "Open"), "Needs agent action")}
+      ${metric("Active", metricValue((ticket) => ticket.status !== "Resolved"), "Unresolved tickets")}
+      ${metric("Escalated", metricValue((ticket) => ticket.status === "Escalated"), "Needs lead attention")}
       ${metric("SLA risk", metricValue((ticket) => slaState(ticket) !== "ok"), "Due soon or overdue")}
       ${metric("AI drafted", metricValue((ticket) => Boolean(ticket.ai?.suggestedReply)), "Ready to review")}
-      ${metric("Resolved", metricValue((ticket) => ticket.status === "Resolved"), "Closed locally")}
     </section>
     <section class="desk-grid">
       <div class="panel queue-panel">
@@ -191,7 +207,7 @@ const renderDesk = () => {
         </div>
         <div class="filters">
           <input id="filter-query" value="${escapeHtml(filters.query)}" placeholder="Search tickets" />
-          ${select("filter-status", ["All", "Open", "Waiting", "Resolved"], filters.status)}
+          ${select("filter-status", ["All", ...STATUS_OPTIONS], filters.status)}
           ${select("filter-priority", ["All", "Urgent", "High", "Normal", "Low"], filters.priority)}
         </div>
         <div class="ticket-list">
@@ -221,7 +237,7 @@ const renderTicketRow = (ticket) => `
     </span>
     <span class="row-meta">${escapeHtml(ticket.customer)} · ${escapeHtml(ticket.company)}</span>
     <span class="row-bottom">
-      <span>${escapeHtml(ticket.category)}</span>
+      <span>${escapeHtml(ticket.category)} · ${escapeHtml(ticket.status)}</span>
       <span class="sla ${slaState(ticket)}">${formatDate(ticket.dueAt)}</span>
     </span>
   </button>
@@ -240,6 +256,8 @@ const renderTicketDetail = (ticket) => {
         <p>${escapeHtml(ticket.customer)} · <a href="mailto:${escapeHtml(ticket.email)}">${escapeHtml(ticket.email)}</a></p>
       </div>
       <div class="header-actions">
+        <button class="secondary" data-action="snooze-ticket" data-id="${ticket.id}">Snooze 24h</button>
+        <button class="secondary" data-action="escalate-ticket" data-id="${ticket.id}">Escalate</button>
         <button class="secondary" data-action="toggle-resolved" data-id="${ticket.id}">${ticket.status === "Resolved" ? "Reopen" : "Resolve"}</button>
         <button class="primary" data-action="analyze-ticket" data-id="${ticket.id}">Analyze</button>
       </div>
@@ -250,7 +268,7 @@ const renderTicketDetail = (ticket) => {
       <span><strong>Tags</strong>${ticketTags(ticket).length ? ticketTags(ticket).map(escapeHtml).join(", ") : "None"}</span>
     </div>
     <div class="field-grid">
-      ${fieldSelect(ticket, "status", ["Open", "Waiting", "Resolved"])}
+      ${fieldSelect(ticket, "status", STATUS_OPTIONS)}
       ${fieldSelect(ticket, "priority", ["Urgent", "High", "Normal", "Low"])}
       ${fieldInput(ticket, "category")}
       ${fieldInput(ticket, "assignee")}
@@ -654,6 +672,8 @@ const handleAction = async (event) => {
   if (action === "send-reply") sendReply(id, "agent");
   if (action === "save-note") sendReply(id, "internal");
   if (action === "toggle-resolved") toggleResolved(id);
+  if (action === "escalate-ticket") escalateTicket(id);
+  if (action === "snooze-ticket") snoozeTicket(id);
   if (action === "export-data") downloadJson(db, `helixdesk-export-${new Date().toISOString().slice(0, 10)}.json`);
   if (action === "import-data") document.querySelector("#import-file").click();
   if (action === "reset-data") {
@@ -814,6 +834,34 @@ const toggleResolved = (id) => {
   ticket.updatedAt = new Date().toISOString();
   saveAndRender();
   setNotice(ticket.status === "Resolved" ? "Ticket resolved." : "Ticket reopened.");
+};
+
+const escalateTicket = (id) => {
+  const ticket = db.tickets.find((item) => item.id === id);
+  if (!ticket) return;
+  ticket.status = "Escalated";
+  ticket.priority = "Urgent";
+  ticket.tags = [...new Set([...ticketTags(ticket), "escalated"])];
+  ticket.messages.push({
+    author: `${db.settings.defaultAssignee} (internal)`,
+    type: "internal",
+    body: "Escalated for lead review.",
+    createdAt: new Date().toISOString()
+  });
+  ticket.updatedAt = new Date().toISOString();
+  saveAndRender();
+  setNotice("Ticket escalated.");
+};
+
+const snoozeTicket = (id) => {
+  const ticket = db.tickets.find((item) => item.id === id);
+  if (!ticket) return;
+  const base = Math.max(dateValue(ticket.dueAt), Date.now());
+  ticket.dueAt = new Date(base + 24 * 36e5).toISOString();
+  if (ticket.status !== "Resolved") ticket.status = "Waiting";
+  ticket.updatedAt = new Date().toISOString();
+  saveAndRender();
+  setNotice("Ticket snoozed for 24 hours.");
 };
 
 const runAnalysis = async (id, shouldRender = true) => {
