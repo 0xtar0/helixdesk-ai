@@ -31,7 +31,16 @@ if (!related.some((article) => article.title.includes("CSV"))) {
 }
 
 const imported = normalizeData({
-  tickets: [{ subject: "Imported ticket", body: "Needs help", status: "Stuck", priority: "Mega", dueAt: "not-a-date" }],
+  tickets: [
+    {
+      subject: "Imported ticket",
+      body: "Needs help",
+      status: "Stuck",
+      priority: "Mega",
+      dueAt: "not-a-date",
+      messages: [{ type: "mystery", createdAt: "not-a-date" }]
+    }
+  ],
   articles: [{ title: "Imported article", updatedAt: "not-a-date" }]
 });
 
@@ -41,6 +50,10 @@ if (!imported.tickets[0].tags || !imported.tickets[0].messages.length || !import
 
 if (imported.tickets[0].status !== "Open" || imported.tickets[0].priority !== "Normal") {
   throw new Error("Import normalization did not correct invalid ticket state.");
+}
+
+if (imported.tickets[0].messages[0].type !== "customer" || Number.isNaN(new Date(imported.tickets[0].messages[0].createdAt).getTime())) {
+  throw new Error("Import normalization did not correct invalid message history.");
 }
 
 console.log("HelixDesk AI smoke test passed.");

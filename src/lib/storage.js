@@ -85,9 +85,7 @@ export const normalizeData = (data) => {
         createdAt,
         updatedAt: isValidDate(ticket.updatedAt) ? ticket.updatedAt : createdAt,
         dueAt,
-        messages: Array.isArray(ticket.messages) && ticket.messages.length
-          ? ticket.messages
-          : [{ author: ticket.customer || "Unknown customer", type: "customer", body: ticket.body || "", createdAt }],
+        messages: normalizeMessages(ticket, createdAt),
         ai: ticket.ai || null
       };
     }),
@@ -109,6 +107,19 @@ export const normalizeData = (data) => {
 const isValidDate = (value) => {
   if (!value) return false;
   return !Number.isNaN(new Date(value).getTime());
+};
+
+const normalizeMessages = (ticket, fallbackDate) => {
+  const messages = Array.isArray(ticket.messages) && ticket.messages.length
+    ? ticket.messages
+    : [{ author: ticket.customer || "Unknown customer", type: "customer", body: ticket.body || "", createdAt: fallbackDate }];
+
+  return messages.map((message) => ({
+    author: message.author || ticket.customer || "Unknown customer",
+    type: ["customer", "agent", "internal"].includes(message.type) ? message.type : "customer",
+    body: message.body || "",
+    createdAt: isValidDate(message.createdAt) ? message.createdAt : fallbackDate
+  }));
 };
 
 export const downloadJson = (data, filename) => {

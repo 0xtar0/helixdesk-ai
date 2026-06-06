@@ -77,6 +77,8 @@ const parseDueHours = (value) => {
   return Math.min(Math.max(hours, 1), 720);
 };
 
+const cleanFormString = (value, fallback = "") => String(value || "").trim() || fallback;
+
 const ticketMatches = (ticket) => {
   const query = filters.query.toLowerCase();
   const haystack = `${ticket.id} ${ticket.subject} ${ticket.customer} ${ticket.company} ${ticket.body} ${ticketTags(ticket).join(" ")}`.toLowerCase();
@@ -256,8 +258,9 @@ const renderTicketDetail = (ticket) => {
         <p>${escapeHtml(ticket.customer)} · <a href="mailto:${escapeHtml(ticket.email)}">${escapeHtml(ticket.email)}</a></p>
       </div>
       <div class="header-actions">
-        <button class="secondary" data-action="snooze-ticket" data-id="${ticket.id}">Snooze 24h</button>
-        <button class="secondary" data-action="escalate-ticket" data-id="${ticket.id}">Escalate</button>
+        <button class="secondary" data-action="take-ticket" data-id="${ticket.id}">Take</button>
+        <button class="secondary" data-action="snooze-ticket" data-id="${ticket.id}" ${ticket.status === "Resolved" ? "disabled" : ""}>Snooze 24h</button>
+        <button class="secondary" data-action="escalate-ticket" data-id="${ticket.id}" ${ticket.status === "Escalated" ? "disabled" : ""}>${ticket.status === "Escalated" ? "Escalated" : "Escalate"}</button>
         <button class="secondary" data-action="toggle-resolved" data-id="${ticket.id}">${ticket.status === "Resolved" ? "Reopen" : "Resolve"}</button>
         <button class="primary" data-action="analyze-ticket" data-id="${ticket.id}">Analyze</button>
       </div>
@@ -307,12 +310,14 @@ const renderTicketDetail = (ticket) => {
 };
 
 const renderCustomerContext = (ticket) => {
+  const hasEmail = Boolean(ticket.email);
+  const hasUsefulCompany = Boolean(ticket.company) && ticket.company !== "Unknown company";
   const related = db.tickets
     .filter((item) => item.id !== ticket.id)
-    .filter((item) => item.email === ticket.email || item.company === ticket.company)
-    .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+    .filter((item) => (hasEmail && item.email === ticket.email) || (hasUsefulCompany && item.company === ticket.company))
+    .sort((a, b) => dateValue(b.updatedAt) - dateValue(a.updatedAt))
     .slice(0, 4);
-  const companyTickets = db.tickets.filter((item) => item.company === ticket.company);
+  const companyTickets = hasUsefulCompany ? db.tickets.filter((item) => item.company === ticket.company) : [ticket];
   const openCompanyTickets = companyTickets.filter((item) => item.status !== "Resolved");
 
   return `
@@ -674,6 +679,7 @@ const handleAction = async (event) => {
   if (action === "toggle-resolved") toggleResolved(id);
   if (action === "escalate-ticket") escalateTicket(id);
   if (action === "snooze-ticket") snoozeTicket(id);
+  if (action === "take-ticket") takeTicket(id);
   if (action === "export-data") downloadJson(db, `helixdesk-export-${new Date().toISOString().slice(0, 10)}.json`);
   if (action === "import-data") document.querySelector("#import-file").click();
   if (action === "reset-data") {
@@ -699,21 +705,21 @@ const createTicket = async (event) => {
   due.setHours(due.getHours() + parseDueHours(form.get("dueHours")));
   const ticket = {
     id: createId("TCK"),
-    customer: form.get("customer"),
-    email: form.get("email"),
-    company: form.get("company") || "Unknown company",
-    subject: form.get("subject"),
-    body: form.get("body"),
+    customer: cleanFormString(form.get("customer"), "Unknown customer"),
+    email: cleanFormString(form.get("email")),
+    company: cleanFormString(form.get("company"), "Unknown company"),
+    subject: cleanFormString(form.get("subject"), "Untitled ticket"),
+    body: cleanFormString(form.get("body")),
     channel: form.get("channel"),
     status: "Open",
     priority: form.get("priority"),
-    category: form.get("category") || "General",
-    assignee: form.get("assignee") || db.settings.defaultAssignee,
+    category: cleanFormString(form.get("category"), "General"),
+    assignee: cleanFormString(form.get("assignee"), db.settings.defaultAssignee),
     tags: parseTags(form.get("tags")),
     createdAt: now,
     updatedAt: now,
     dueAt: due.toISOString(),
-    messages: [{ author: form.get("customer"), type: "customer", body: form.get("body"), createdAt: now }],
+    messages: [{ author: cleanFormString(form.get("customer"), "Unknown customer"), type: "customer", body: cleanFormString(form.get("body")), createdAt: now }],
     ai: null
   };
   db.tickets.unshift(ticket);
@@ -813,6 +819,7 @@ const sendReply = (id, type) => {
     return;
   }
   const ticket = db.tickets.find((item) => item.id === id);
+  if (!ticket) return;
   ticket.messages.push({
     author: type === "internal" ? `${db.settings.defaultAssignee} (internal)` : db.settings.defaultAssignee,
     type,
@@ -839,6 +846,10 @@ const toggleResolved = (id) => {
 const escalateTicket = (id) => {
   const ticket = db.tickets.find((item) => item.id === id);
   if (!ticket) return;
+  if (ticket.status === "Escalated") {
+    setNotice("Ticket is already escalated.");
+    return;
+  }
   ticket.status = "Escalated";
   ticket.priority = "Urgent";
   ticket.tags = [...new Set([...ticketTags(ticket), "escalated"])];
@@ -856,12 +867,27 @@ const escalateTicket = (id) => {
 const snoozeTicket = (id) => {
   const ticket = db.tickets.find((item) => item.id === id);
   if (!ticket) return;
-  const base = Math.max(dateValue(ticket.dueAt), Date.now());
+  if (ticket.status === "Resolved") {
+    setNotice("Resolved tickets cannot be snoozed.");
+    return;
+  }
+  const currentDue = dateValue(ticket.dueAt);
+  const base = Number.isFinite(currentDue) && currentDue !== Number.MAX_SAFE_INTEGER ? Math.max(currentDue, Date.now()) : Date.now();
   ticket.dueAt = new Date(base + 24 * 36e5).toISOString();
   if (ticket.status !== "Resolved") ticket.status = "Waiting";
   ticket.updatedAt = new Date().toISOString();
   saveAndRender();
   setNotice("Ticket snoozed for 24 hours.");
+};
+
+const takeTicket = (id) => {
+  const ticket = db.tickets.find((item) => item.id === id);
+  if (!ticket) return;
+  ticket.assignee = db.settings.defaultAssignee || "Support";
+  if (ticket.status === "Waiting") ticket.status = "Open";
+  ticket.updatedAt = new Date().toISOString();
+  saveAndRender();
+  setNotice(`Assigned to ${ticket.assignee}.`);
 };
 
 const runAnalysis = async (id, shouldRender = true) => {
